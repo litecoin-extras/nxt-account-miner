@@ -213,7 +213,8 @@ void watchdog(){
 					}
 			}
 		}
-sleep(1);
+
+
 
 		//printf("Speed: %llu / sec\n",(olditer));
 	attron(A_STANDOUT);
@@ -246,6 +247,7 @@ mvaddstr(7,0,str);
 sprintf (str,"will be created for further inspection. The program will exit.",(olditer) );
 mvaddstr(8,0,str);
 refresh();
+sleep(1);
 	}
 }
 void end_curses(){
@@ -297,6 +299,7 @@ void *get_result(void *id){
 			// interruption point, so we can kill thread who slow down the algorithm
 
 			if(kill_indications[my_id-1]==1){
+				pthread_mutex_unlock(&mutex_iter);
 				return;
 			}
 			pthread_mutex_unlock(&mutex_iter);
