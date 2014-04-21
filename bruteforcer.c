@@ -113,6 +113,45 @@ extern void curve25519_donna(u8 *mypublic, const u8 *secret, const u8 *basepoint
 
 unsigned long long global_iter = 0LL;
 pthread_mutex_t mutex_iter;
+char cpumodel[512];
+void get_cpu_model () 
+
+{
+
+   FILE* fp; 
+   char buffer[4096]; 
+   size_t bytes_read; 
+   char* match; 
+
+   /* Read the entire contents of /proc/cpuinfo into the buffer.  */ 
+   fp = fopen ("/proc/cpuinfo", "r"); 
+   bytes_read = fread (buffer, 1, sizeof (buffer), fp); 
+   fclose (fp); 
+
+   printf("bytes read: %d\n",bytes_read);
+   /* Bail if read failed or if buffer isn't big enough.  */ 
+   if (bytes_read == 0) {
+   	 sprintf(cpumodel,"could not be detected");	
+     return; 
+ }
+
+   /* NUL-terminate the text.  */ 
+   buffer[bytes_read] == '\0'; 
+   /* Locate the line that starts with "cpu MHz".  */ 
+   match = strstr (buffer, "model name"); 
+
+   if (match == NULL) {
+   	 sprintf(cpumodel,"could not be detected");	
+     return; 
+ }
+   char* ptr = strtok(match, ":\n");
+   ptr = strtok(NULL, ":\n");
+   char tmp[256];
+   sprintf(tmp,"%s",ptr);
+   sprintf(cpumodel,"%s",&tmp[0]+1);
+   return; 
+
+} 
 
 /**
 Binary Search Algorithm to check multiple Targets with O(log n)
@@ -225,6 +264,8 @@ sprintf (str,"Elasped time is %.2lf seconds.", dif );
 mvaddstr(0,0,str);
 attron(A_BOLD);
 	attroff(A_STANDOUT);
+sprintf (str,"Processor:\t%s",(cpumodel) );
+mvaddstr(3,0,str);
 
 if(automatic_calibration==1){	
 sprintf (str,"Threads:\t%d (calibration phase %d)", ntimes,MAX_OBSERVING_WINDOW-observing_window );
@@ -232,20 +273,20 @@ sprintf (str,"Threads:\t%d (calibration phase %d)", ntimes,MAX_OBSERVING_WINDOW-
 sprintf (str,"Threads:\t%d (peak was %d key/s)", last_ntimes, last_peak);	
 }
 
-mvaddstr(3,0,str);
+mvaddstr(4,0,str);
 attron(COLOR_PAIR(3));
 sprintf (str,"Key-Speed:\t%llu / sec\n",(olditer) );
-mvaddstr(4,0,str);
+mvaddstr(5,0,str);
 attron(COLOR_PAIR(1));
 sprintf (str,"NXT Targets:\t%d accounts (simultaneously)\n",(number_targets) );
-mvaddstr(5,0,str);
+mvaddstr(6,0,str);
 
 attroff(A_BOLD);
 attron(COLOR_PAIR(7));
 sprintf (str,"If the cracker finds a match, a file named 'found.pcl'",(olditer) );
-mvaddstr(7,0,str);
-sprintf (str,"will be created for further inspection. The program will exit.",(olditer) );
 mvaddstr(8,0,str);
+sprintf (str,"will be created for further inspection. The program will exit.",(olditer) );
+mvaddstr(9,0,str);
 refresh();
 sleep(1);
 	}
@@ -370,9 +411,13 @@ attron(COLOR_PAIR(7));
 }
 
 int main(int argc, char **argv) {
+	get_cpu_model();
+
+
 	time (&start);
 	start_curses();
 	srand (time(NULL));
+
 
 
 
