@@ -84,7 +84,16 @@ typedef uint64_t felem;
 
 
 
-	int ntimes = 6;
+unsigned int ntimes = 1;
+bool automatic_calibration = 1;
+unsigned int last_ntimes = 0;
+unsigned int last_peak = 0;
+unsigned int current_peak = 0;
+unsigned int observing_window=0;
+#define MAX_OBSERVING_WINDOW 5
+pthread_t *tid = 0;
+bool kill_indications[128];
+void *get_result(void *id);
 static void self_check(uint32_t* hash, unsigned long long secret);
 static void concurrent_check(uint32_t* hash, uint8_t* secret);
 static void shittify_secret(uint8_t* mysecret);
@@ -153,13 +162,59 @@ rand64bits()
 }
 
 void watchdog(){
-
+//sleep(1);
 	while(1==1){
+
+		
 		pthread_mutex_lock(&mutex_iter);
 		unsigned long long olditer = global_iter;
 		global_iter = 0;
 		pthread_mutex_unlock(&mutex_iter);
-		sleep(1);
+		
+
+		if(automatic_calibration==1){
+			if(current_peak<olditer)
+				current_peak=olditer;
+
+			observing_window++;
+
+			
+
+			if(observing_window>=MAX_OBSERVING_WINDOW){
+				// check if we found our goal
+				if(ntimes>1){
+					// ENFORCE INCREMENTS BY AT LEAST 1000000 KEYS/s, otherwise extra threads are worthless
+					if(current_peak-1000000>last_peak){
+						last_peak = current_peak;
+						last_ntimes = ntimes;
+						ntimes++;
+						observing_window=0;
+						current_peak=0;
+						pthread_create( &tid[ntimes-1], NULL, get_result, &ntimes );
+						
+					}else{
+						// last configuration was the best,
+						// kill latest thread and keep it this way
+						pthread_mutex_lock(&mutex_iter);
+						kill_indications[ntimes-1]=1; // trigger interruption point to kill the slowing thread;
+						pthread_mutex_unlock(&mutex_iter);
+						automatic_calibration = 0;
+
+
+
+					}
+				}else{
+						last_peak = current_peak;
+						last_ntimes = ntimes;
+						ntimes++;
+						observing_window=0;
+						current_peak=0;
+						pthread_create( &tid[ntimes-1], NULL, get_result, &ntimes );
+					}
+			}
+		}
+sleep(1);
+
 		//printf("Speed: %llu / sec\n",(olditer));
 	attron(A_STANDOUT);
 time (&end);
@@ -169,7 +224,13 @@ sprintf (str,"Elasped time is %.2lf seconds.", dif );
 mvaddstr(0,0,str);
 attron(A_BOLD);
 	attroff(A_STANDOUT);
-sprintf (str,"Threads:\t%d", ntimes );
+
+if(automatic_calibration==1){	
+sprintf (str,"Threads:\t%d (calibration phase %d)", ntimes,MAX_OBSERVING_WINDOW-observing_window );
+}else{
+sprintf (str,"Threads:\t%d (peak was %d key/s)", last_ntimes, last_peak);	
+}
+
 mvaddstr(3,0,str);
 attron(COLOR_PAIR(3));
 sprintf (str,"Key-Speed:\t%llu / sec\n",(olditer) );
@@ -192,8 +253,8 @@ void end_curses(){
 exit(0);
 }
 
-void get_result(){
-
+void *get_result(void *id){
+	int my_id = *((int *) id);
 	uint32_t hash[8];
 	char	 secret[32];
 	uint8_t  pubkey[32];
@@ -203,7 +264,7 @@ void get_result(){
 
 	unsigned long long thread_seed = rand64bits();
 	
-	
+
 
 	// initial hashchar (only once)
 	self_check(hash, thread_seed);
@@ -229,9 +290,16 @@ void get_result(){
 
 		++local_iter;
 		if(local_iter % 10000==0){
-		pthread_mutex_lock(&mutex_iter);
-		global_iter=global_iter+10000;
-		pthread_mutex_unlock(&mutex_iter);
+
+
+			pthread_mutex_lock(&mutex_iter);
+			global_iter=global_iter+10000;
+			// interruption point, so we can kill thread who slow down the algorithm
+
+			if(kill_indications[my_id-1]==1){
+				return;
+			}
+			pthread_mutex_unlock(&mutex_iter);
 		}
 	
 		fsum(x, bp);
@@ -299,14 +367,19 @@ attron(COLOR_PAIR(7));
 }
 
 int main(int argc, char **argv) {
-time (&start);
+	time (&start);
 	start_curses();
 	srand (time(NULL));
 
-	pthread_t *tid = malloc( (ntimes+1) * sizeof(pthread_t) );
-	int i;
-	for( i=0; i<ntimes; i++ ) 
-	    pthread_create( &tid[i], NULL, get_result, NULL );
+
+
+	// Allocate enough thread slots, just in case
+	tid = malloc( (128) * sizeof(pthread_t) );
+	for(int i=0;i<128;++i)
+		kill_indications[i]=0;
+
+	// start with one thread only, rest will be done in calibration phase
+	pthread_create( &tid[ntimes-1], NULL, get_result, (void*)&ntimes );
 
 	// watchdog
    // pthread_create( &tid[ntimes], NULL, watchdog, NULL );
